@@ -36,3 +36,13 @@ Mempool can be installed in other ways too, but we only recommend doing so if yo
 - See the [`docker/`](./docker/) directory for instructions on deploying Mempool with Docker.
 - See the [`backend/`](./backend/) and [`frontend/`](./frontend/) directories for manual install instructions oriented for developers.
 - See the [`production/`](./production/) directory for guidance on setting up a more serious Mempool instance designed for high performance at scale.
+
+## Deployment (block.space)
+
+explore.block.space follows `master`. A one-minute timer runs
+`tools/autodeploy.sh`, which fast-forwards the checkout and rebuilds whichever
+half changed: `backend/` is compiled and `mempool-api` restarted once its chain
+tip follows the node; `frontend/` gets the full localized production build,
+staged in `dist-next` and swapped in, then `mempool-web` is restarted and
+smoke-checked. A failed check swaps the previous build back. Uncommitted edits
+in the checkout pause deploys until they are committed or discarded.
