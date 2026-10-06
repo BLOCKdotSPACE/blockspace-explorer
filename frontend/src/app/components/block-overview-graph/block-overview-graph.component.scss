@@ -33,6 +33,68 @@
   justify-content: center;
 }
 
+.ord-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+
+  &.hidden {
+    display: none;
+  }
+
+  .tile {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    // artifact squares read as windows in the mosaic: raster margins sit on
+    // the box colour, not the fee colour (native SVGs paint the whole tile
+    // themselves and cover this entirely)
+    background: var(--box-bg);
+
+    img {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      // contain, not cover: never crop the artwork — portrait/landscape content
+      // letterboxes against the square's fee color instead
+      object-fit: contain;
+      image-rendering: pixelated;
+
+      // SVGs paint their own margins natively when given the whole viewport
+      &.native {
+        object-fit: fill;
+      }
+      opacity: 0;
+      transition: opacity 300ms ease;
+
+      &.loaded {
+        opacity: 1;
+      }
+    }
+
+    .tile-spinner {
+      // scales down with the square, capped so big squares don't get huge rings
+      width: min(24px, 45%);
+      aspect-ratio: 1;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-top-color: rgba(255, 255, 255, 0.75);
+      border-radius: 50%;
+      animation: ord-tile-spin 800ms linear infinite;
+    }
+  }
+}
+
+@keyframes ord-tile-spin {
+  to { transform: rotate(360deg); }
+}
+
 .block-overview-canvas {
   position: absolute;
   left: 0;

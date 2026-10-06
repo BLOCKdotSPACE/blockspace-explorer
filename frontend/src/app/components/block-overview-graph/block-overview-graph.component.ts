@@ -1,4 +1,5 @@
 import { Component, ElementRef, ViewChild, HostListener, Input, Output, EventEmitter, NgZone, AfterViewInit, OnDestroy, OnChanges } from '@angular/core';
+import { SafeUrl } from '@angular/platform-browser';
 import { TransactionStripped } from '@interfaces/node-api.interface';
 import { FastVertexArray } from '@components/block-overview-graph/fast-vertex-array';
 import BlockScene from '@components/block-overview-graph/block-scene';
@@ -12,6 +13,7 @@ import { Subscription } from 'rxjs';
 import { defaultColorFunction, setOpacity, defaultAuditColors, defaultColors, ageColorFunction, contrastColorFunction, contrastAuditColors, contrastColors } from '@components/block-overview-graph/utils';
 import { ActiveFilter, FilterMode, toFlags } from '@app/shared/filters.utils';
 import { detectWebGL } from '@app/shared/graphs.utils';
+import { isSvgUrl } from '@app/shared/image.utils';
 
 const unmatchedOpacity = 0.2;
 const unmatchedAuditColors = {
@@ -58,6 +60,10 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
   @Input() relativeTime: number | null;
   @Input() blockConversion: Price;
   @Input() overrideColors: ((tx: TxView) => Color) | null = null;
+  // txid -> content URL (http path or blob SafeUrl); when set, media renders
+  // inside each transaction's square as a DOM overlay above the WebGL canvas
+  // (pointer-events: none)
+  @Input() ordContentUrls: { [txid: string]: string | SafeUrl } | null = null;
   @Output() txClickEvent = new EventEmitter<{ tx: TransactionStripped, keyModifier: boolean}>();
   @Output() txHoverEvent = new EventEmitter<string>();
   @Output() readyEvent = new EventEmitter();
@@ -99,6 +105,8 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
     change: {},
     direction: 'left',
   };
+
+  ordOverlays: { txid: string; left: number; top: number; size: number; src: string | SafeUrl; loaded?: boolean; native?: boolean }[] = [];
 
   searchText: string;
   searchSubscription: Subscription;
@@ -159,6 +167,75 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
     if ((changes.filterFlags || changes.showFilters || changes.filterMode || changes.gradientMode)) {
       this.setFilterFlags();
     }
+    if (changes.ordContentUrls) {
+      this.updateOrdOverlays();
+    }
+  }
+
+  // Project each ord-carrying transaction's final layout position into CSS
+  // space and lay an <img> over its square. screenPosition is the square's
+  // bottom-left corner in device pixels with y pointing up (WebGL space).
+  updateOrdOverlays(): void {
+    if (!this.scene || !this.ordContentUrls || !this.webGlEnabled) {
+      this.ordOverlays = [];
+      return;
+    }
+    const dpr = window.devicePixelRatio || 1;
+    // Rebuilds must carry per-tile state forward: Angular reuses the <img>
+    // nodes (trackBy txid), and an already-complete image never fires `load`
+    // again — a reset `loaded` flag would leave it invisible behind its
+    // spinner forever.
+    const prev = new Map(this.ordOverlays.map(o => [o.txid, o]));
+    const overlays = [];
+    for (const txid of Object.keys(this.ordContentUrls)) {
+      const tx = this.scene.txs[txid];
+      if (!tx || !tx.screenPosition || !tx.screenPosition.s) {
+        continue;
+      }
+      const size = tx.screenPosition.s / dpr;
+      if (size < 5) {
+        continue; // too small to see anything
+      }
+      const src = this.ordContentUrls[txid];
+      const old = prev.get(txid);
+      overlays.push({
+        txid,
+        left: tx.screenPosition.x / dpr,
+        top: (this.displayHeight - tx.screenPosition.y - tx.screenPosition.s) / dpr,
+        size,
+        src,
+        loaded: old?.src === src ? old.loaded : false,
+        native: old?.src === src ? old.native : undefined,
+      });
+    }
+    // biggest squares win if we have to cap the DOM node count
+    overlays.sort((a, b) => b.size - a.size);
+    this.ordOverlays = overlays.slice(0, 600);
+  }
+
+  onOrdOverlayLoaded(overlay: { src: string | SafeUrl; loaded?: boolean; native?: boolean }, event: Event): void {
+    overlay.loaded = true;
+    // Nothing is ever painted that the artwork didn't draw itself: SVGs are
+    // re-rendered with the whole square as their viewport (the vector paints
+    // its own margins); rasters letterbox honestly over the box colour.
+    if (overlay.native === undefined) {
+      if (typeof overlay.src === 'string') {
+        isSvgUrl(overlay.src).then((svg) => {
+          overlay.native = svg;
+        });
+      } else {
+        overlay.native = false; // blob previews (unconfirmed) render contained
+      }
+    }
+  }
+
+  onOrdOverlayError(overlay: { txid: string }): void {
+    // non-image content (or a fetch failure) — drop the tile
+    this.ordOverlays = this.ordOverlays.filter(o => o !== overlay);
+  }
+
+  trackOrdOverlay(index: number, overlay: { txid: string }): string {
+    return overlay.txid;
   }
 
   setFilterFlags(goggle?: ActiveFilter): void {
@@ -222,6 +299,7 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
       this.readyNextFrame = true;
       this.start();
       this.updateSearchHighlight();
+      this.updateOrdOverlays();
     }
   }
 
@@ -231,6 +309,7 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
       this.scene.enter(transactions, direction);
       this.start();
       this.updateSearchHighlight();
+      this.updateOrdOverlays();
     }
   }
 
@@ -249,6 +328,7 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
       this.scene.replace(transactions || [], direction, sort, startTime);
       this.start();
       this.updateSearchHighlight();
+      this.updateOrdOverlays();
     }
   }
 
@@ -318,6 +398,7 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
       this.start();
       this.lastUpdate = performance.now();
       this.updateSearchHighlight();
+      this.updateOrdOverlays();
     }
   }
 
@@ -392,6 +473,7 @@ export class BlockOverviewGraphComponent implements AfterViewInit, OnDestroy, On
       if (this.scene) {
         this.scene.resize({ width: this.displayWidth, height: this.displayHeight, animate: false });
         this.start();
+        this.updateOrdOverlays();
       } else {
         this.scene = new BlockScene({ width: this.displayWidth, height: this.displayHeight, resolution: this.resolution,
           blockLimit: this.blockLimit, orientation: this.orientation, flip: this.flip, vertexArray: this.vertexArray, theme: this.themeService,

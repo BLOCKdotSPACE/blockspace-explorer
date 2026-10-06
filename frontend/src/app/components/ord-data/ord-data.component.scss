@@ -33,3 +33,46 @@ pre {
 	margin-top: 5px;
 	max-height: 200px;
 }
+
+.inscription-previews {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 8px;
+
+	.preview {
+		position: relative;
+
+		img {
+			display: block;
+			width: 240px;
+			height: 240px;
+			max-width: 100%;
+			object-fit: contain;
+			border-radius: 4px;
+			background: var(--box-bg);
+			image-rendering: pixelated;
+
+			// SVGs paint their own margins natively when given the whole box
+			&.native {
+				object-fit: fill;
+			}
+		}
+
+		.insc-number {
+			position: absolute;
+			bottom: 4px;
+			left: 4px;
+			background: rgba(0, 0, 0, 0.65);
+			color: #fff;
+			padding: 0 6px;
+			border-radius: 3px;
+			font-size: 12px;
+			text-decoration: none;
+
+			&:hover {
+				text-decoration: underline;
+			}
+		}
+	}
+}

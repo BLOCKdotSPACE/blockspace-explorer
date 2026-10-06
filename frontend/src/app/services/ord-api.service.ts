@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { catchError, forkJoin, map, Observable, of, switchMap, tap } from 'rxjs';
 import { Inscription } from '@app/shared/ord/inscription.utils';
 import { Transaction } from '@interfaces/electrs.interface';
@@ -14,7 +15,35 @@ export class OrdApiService {
 
   constructor(
     private electrsApiService: ElectrsApiService,
+    private httpClient: HttpClient,
   ) { }
+
+  // Inscription metadata (number, timestamp, sat...) from the local ord server,
+  // proxied same-origin at /ord-api by serve-native.js. Null when unindexed
+  // (e.g. unconfirmed tx) or when ord is unreachable.
+  // All inscriptions revealed in a block, as a txid -> content URL map
+  // (first inscription per transaction). Empty map when ord is unreachable.
+  getBlockOrdContentUrls$(height: number): Observable<{ [txid: string]: string }> {
+    return this.httpClient.get<any>(`/ord-api/block/${height}`, { headers: { accept: 'application/json' } }).pipe(
+      map((block) => {
+        const urls: { [txid: string]: string } = {};
+        for (const id of block?.inscriptions || []) {
+          const txid = id.slice(0, 64);
+          if (!urls[txid]) {
+            urls[txid] = `/ord-api/content/${id}`;
+          }
+        }
+        return urls;
+      }),
+      catchError(() => of({})),
+    );
+  }
+
+  getInscriptionInfo$(inscriptionId: string): Observable<any> {
+    return this.httpClient.get(`/ord-api/inscription/${inscriptionId}`, { headers: { accept: 'application/json' } }).pipe(
+      catchError(() => of(null)),
+    );
+  }
 
   decodeRunestone$(tx: Transaction): Observable<{ runestone: Runestone, runeInfo: { [id: string]: { etching: Etching; txid: string; } } }> {
     const runestone = decipherRunestone(tx);

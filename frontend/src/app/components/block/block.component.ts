@@ -18,6 +18,8 @@ import { CacheService } from '@app/services/cache.service';
 import { ServicesApiServices } from '@app/services/services-api.service';
 import { PreloadService } from '@app/services/preload.service';
 import { identifyPrioritizedTransactions } from '@app/shared/transaction.utils';
+import { OrdApiService } from '@app/services/ord-api.service';
+import { CountersApiService } from '@app/services/counters-api.service';
 
 interface ComparisonStats {
   totalFees: number;
@@ -56,6 +58,7 @@ export class BlockComponent implements OnInit, OnDestroy {
   latestBlocks: BlockExtended[] = [];
   oobFees: number = 0;
   strippedTransactions: TransactionStripped[];
+  ordContentUrls: { [txid: string]: string } | null = null;
   accelerations: Acceleration[];
   overviewTransitionDirection: string;
   isLoadingOverview = true;
@@ -121,12 +124,38 @@ export class BlockComponent implements OnInit, OnDestroy {
     private servicesApiService: ServicesApiServices,
     private cd: ChangeDetectorRef,
     private preloadService: PreloadService,
+    private ordApiService: OrdApiService,
+    private countersApiService: CountersApiService,
   ) {
     this.webGlEnabled = this.stateService.isBrowser && detectWebGL();
   }
 
   get showComparison() {
     return this.showAudit || this.block?.stale;
+  }
+
+  // inscription + counter content for this block, rendered inside the
+  // transaction squares of the block visualization (local ord / counters services)
+  fetchOrdContentUrls(height: number): void {
+    forkJoin([
+      this.ordApiService.getBlockOrdContentUrls$(height),
+      this.countersApiService.getCountersByTxid$().pipe(take(1)),
+    ]).subscribe(([inscriptionUrls, countersByTxid]) => {
+      if (this.block?.height !== height) {
+        return; // navigated away before the lookup came back
+      }
+      const urls = { ...inscriptionUrls };
+      countersByTxid.forEach((counters, txid) => {
+        if (!urls[txid]) {
+          const counter = counters.find((c) => c.block === height && (c.content_type || '').startsWith('image/'));
+          if (counter) {
+            urls[txid] = `/counters-api/content/${counter.number}`;
+          }
+        }
+      });
+      this.ordContentUrls = Object.keys(urls).length ? urls : null;
+      this.cd.markForCheck();
+    });
   }
 
   ngOnInit(): void {
@@ -212,6 +241,7 @@ export class BlockComponent implements OnInit, OnDestroy {
           this.isLoadingBlock = true;
           this.isLoadingOverview = true;
           this.strippedTransactions = undefined;
+          this.ordContentUrls = null;
           this.blockAudit = undefined;
           this.accelerations = undefined;
 
@@ -362,6 +392,9 @@ export class BlockComponent implements OnInit, OnDestroy {
         this.strippedTransactions = transactions;
       } else {
         this.strippedTransactions = [];
+      }
+      if (block?.height != null) {
+        this.fetchOrdContentUrls(block.height);
       }
       this.blockAudit = blockAudit;
 

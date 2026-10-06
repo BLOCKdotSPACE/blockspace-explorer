@@ -417,3 +417,45 @@ h2 {
   50% { background-color: #8457bb; box-shadow: #ad7de5 0px 0px 18px -2px;}
   100% { background-color: #653b9c; box-shadow: #ad7de57f 0px 0px 12px -2px; }
 }
+.counters-box {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-bottom: 10px;
+
+	.counter-preview {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+
+		img {
+			width: 96px;
+			height: 96px;
+			object-fit: contain;
+			border-radius: 4px;
+			background: var(--box-bg);
+			image-rendering: pixelated;
+
+			// SVGs paint their own margins natively when given the whole box
+			&.native {
+				object-fit: fill;
+			}
+		}
+
+		.counter-label {
+			display: flex;
+			flex-direction: column;
+			align-items: flex-start;
+			gap: 4px;
+		}
+
+		.badge-counter {
+			background-color: var(--grey);
+			font-size: 81%;
+
+			&.primary {
+				background-color: var(--primary);
+			}
+		}
+	}
+}

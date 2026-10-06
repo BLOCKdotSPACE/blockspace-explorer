@@ -21,6 +21,23 @@
         <span i18n="transaction.poison.warning">Warning! This transaction involves deceptively similar addresses. It may be an address poisoning attack.</span>
       </div>
     }
+    @if (tx['_counters']?.length) {
+      <div class="counters-box">
+        @for (counter of tx['_counters']; track counter.number) {
+          <div class="counter-preview">
+            @if (counter.content_type?.startsWith('image/')) {
+              <img [src]="'/counters-api/content/' + counter.number" [class.native]="counter.content_type.includes('svg')"
+                loading="lazy" alt="Counter content">
+            }
+            <div class="counter-label">
+              <span class="badge badge-counter primary">Counter #{{ counter.number }}</span>
+              <span class="badge badge-counter">{{ counter.asset }}</span>
+              <span class="badge badge-counter">{{ counter.content_type }}</span>
+            </div>
+          </div>
+        }
+      </div>
+    }
     <div class="row">
       <div class="col">
         <table class="table table-fixed table-borderless smaller-text table-sm table-tx-vin">
@@ -145,7 +162,7 @@
                   <td></td>
                 }
                 <td colspan="2">
-                  <app-ord-data [inscriptions]="showOrdData[tx.txid + '-vin-' + vindex]['inscriptions']" [type]="'vin'"></app-ord-data>
+                  <app-ord-data [inscriptions]="showOrdData[tx.txid + '-vin-' + vindex]['inscriptions']" [type]="'vin'" [txid]="tx.txid" [indexOffset]="showOrdData[tx.txid + '-vin-' + vindex]['indexOffset'] || 0"></app-ord-data>
                 </td>
               </tr>
               <tr *ngIf="(showDetails$ | async) === true">

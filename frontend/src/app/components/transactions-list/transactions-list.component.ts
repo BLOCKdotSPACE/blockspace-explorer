@@ -12,6 +12,7 @@ import { ApiService } from '@app/services/api.service';
 import { PriceService } from '@app/services/price.service';
 import { StorageService } from '@app/services/storage.service';
 import { OrdApiService } from '@app/services/ord-api.service';
+import { CountersApiService } from '@app/services/counters-api.service';
 import { Inscription } from '@app/shared/ord/inscription.utils';
 import { Etching, Runestone } from '@app/shared/ord/rune.utils';
 import { ADDRESS_SIMILARITY_THRESHOLD, AddressMatch, AddressSimilarity, AddressType, AddressTypeInfo, checkedCompareAddressStrings, detectAddressType } from '@app/shared/address-utils';
@@ -70,7 +71,7 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
   showFullOpReturnData: { [voutIndex: number]: boolean } = {};
   showFullOpReturnPreview: { [voutIndex: number]: boolean } = {};
   showTaprootControlBlock: { [vinIndex: number]: boolean } = {};
-  showOrdData: { [key: string]: { show: boolean; inscriptions?: Inscription[]; runestone?: Runestone, runeInfo?: { [id: string]: { etching: Etching; txid: string; } }; } } = {};
+  showOrdData: { [key: string]: { show: boolean; inscriptions?: Inscription[]; indexOffset?: number; runestone?: Runestone, runeInfo?: { [id: string]: { etching: Etching; txid: string; } }; } } = {};
   similarityMatches: Map<string, Map<string, { score: number, match: AddressMatch, group: number }>> = new Map();
 
   selectedSig: { txIndex: number, vindex: number, sig: SigInfo } | null = null;
@@ -87,6 +88,7 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
     private electrsApiService: ElectrsApiService,
     private apiService: ApiService,
     private ordApiService: OrdApiService,
+    private countersApiService: CountersApiService,
     private assetsService: AssetsService,
     private ref: ChangeDetectorRef,
     private priceService: PriceService,
@@ -350,6 +352,41 @@ export class TransactionsListComponent implements OnInit, OnChanges, OnDestroy {
 
         tx.largeInput = tx.largeInput || tx.vin.some(vin => (vin?.prevout?.value > 1000000000));
         tx.largeOutput = tx.vout.some(vout => (vout?.value > 1000000000));
+
+        // auto-expand inscription data so the content shows inside the
+        // transaction box without clicking the badge. The running offset
+        // tracks the envelope index across inputs: inscription ids are
+        // `${txid}i${n}` numbered over the whole transaction.
+        let ordIndexOffset = 0;
+        tx.vin.forEach((vin, vindex) => {
+          if (!vin.isInscription) {
+            return;
+          }
+          const key = tx.txid + '-vin-' + vindex;
+          if (!this.showOrdData[key]?.inscriptions) {
+            const inscriptions = this.ordApiService.decodeInscriptions(vin.taprootInfo?.scriptPath?.script) || [];
+            this.showOrdData[key] = { show: true, inscriptions, indexOffset: ordIndexOffset };
+            ordIndexOffset += inscriptions.length;
+          } else {
+            this.showOrdData[key].indexOffset = ordIndexOffset;
+            ordIndexOffset += this.showOrdData[key].inscriptions.length;
+          }
+        });
+      });
+
+      // tag transactions that carry a Bitcoin Counter so the content shows
+      // inside the transaction box
+      this.countersApiService.getCountersByTxid$().subscribe((byTxid) => {
+        let found = false;
+        this.transactions?.forEach((tx) => {
+          if (byTxid.has(tx.txid)) {
+            tx['_counters'] = byTxid.get(tx.txid);
+            found = true;
+          }
+        });
+        if (found) {
+          this.ref.markForCheck();
+        }
       });
 
       if (this.blockTime && this.transactions?.length && this.currency) {

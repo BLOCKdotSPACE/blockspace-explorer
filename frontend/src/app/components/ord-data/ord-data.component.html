@@ -49,6 +49,22 @@
     </div>
 }
 
+@if (previews?.length && type === 'vin') {
+  <div class="inscription-previews">
+    @for (p of previews; track $index) {
+      @if (p.src) {
+        <div class="preview">
+          <img [src]="p.src" [class.native]="p.native" loading="lazy" alt="Inscription preview"
+            (load)="onPreviewLoaded(p, $event)" (error)="onPreviewError(p)">
+          @if (p.number !== undefined) {
+            <a class="insc-number" [href]="'/ord-api/content/' + p.ordId" target="_blank">#{{ p.number }}</a>
+          }
+        </div>
+      }
+    }
+  </div>
+}
+
 @if (!runestone && type === 'vout') {
   <div class="skeleton-loader" style="width: 50%;"></div>
 }

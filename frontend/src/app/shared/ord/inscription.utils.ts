@@ -324,7 +324,9 @@ export interface Inscription {
   body_length?: number;
   content_type?: Uint8Array;
   content_type_str?: string;
+  content_encoding_str?: string;
   delegate_txid?: string;
+  delegate_index?: number;
 }
 
 /**
@@ -411,12 +413,30 @@ export function extractInscriptionData(raw: Uint8Array, pointer: number): Inscri
       contentType = bytesToUnicodeString(contentTypeRaw);
     }
 
+    const contentEncodingRaw = getKnownFieldValue(fields, knownFields.content_encoding);
+
+    // delegate value = 32-byte txid (little-endian) + optional little-endian inscription index
+    const delegateRaw = getKnownFieldValue(fields, knownFields.delegate);
+    let delegateTxid: string = null;
+    let delegateIndex = 0;
+    if (delegateRaw && delegateRaw.length >= 32) {
+      delegateTxid = bytesToHex(delegateRaw.slice(0, 32).reverse());
+      for (let i = delegateRaw.length - 1; i >= 32; i--) {
+        delegateIndex = delegateIndex * 256 + delegateRaw[i];
+      }
+    }
+
     return {
       content_type_str: contentType,
-      body: combinedData.slice(0, 100_000), // Limit body to 100 kB for now
-      is_cropped: combinedData.length > 100_000,
+      content_encoding_str: contentEncodingRaw ? bytesToUnicodeString(contentEncodingRaw) : null,
+      // The bytes are already in memory from the witness, so keep essentially
+      // everything (a witness can't exceed ~4MB) — this lets large unconfirmed
+      // inscriptions preview client-side before ord has indexed them.
+      body: combinedData.slice(0, 4_000_000),
+      is_cropped: combinedData.length > 4_000_000,
       body_length: combinedData.length,
-      delegate_txid: getKnownFieldValue(fields, knownFields.delegate) ? bytesToHex(getKnownFieldValue(fields, knownFields.delegate).reverse()) : null
+      delegate_txid: delegateTxid,
+      delegate_index: delegateIndex,
     };
 
   } catch (ex) {

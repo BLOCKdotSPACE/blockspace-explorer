@@ -2,6 +2,14 @@
 <div class="graph-alignment" [class.grid-align]="!autofit" [style.gridTemplateColumns]="'repeat(auto-fit, ' + resolution + 'px)'">
   <div class="block-overview-graph">
     <canvas *browserOnly class="block-overview-canvas" [class.clickable]="!!hoverTx" #blockCanvas></canvas>
+    <div class="ord-overlay" *ngIf="ordOverlays.length" [class.hidden]="isLoading">
+      <div class="tile" *ngFor="let o of ordOverlays; trackBy: trackOrdOverlay"
+        [style.left.px]="o.left" [style.top.px]="o.top" [style.width.px]="o.size" [style.height.px]="o.size">
+        <div class="tile-spinner" *ngIf="!o.loaded"></div>
+        <img [src]="o.src" [class.loaded]="o.loaded" [class.native]="o.native" loading="lazy" decoding="async" alt=""
+          (load)="onOrdOverlayLoaded(o, $event)" (error)="onOrdOverlayError(o)">
+      </div>
+    </div>
     @if (!disableSpinner) {
       <div class="loader-wrapper" [class.hidden]="!isLoading && !unavailable">
         <div *ngIf="!unavailable" class="spinner-border ml-3 loading" role="status"></div>

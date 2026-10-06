@@ -10,7 +10,11 @@ import { RelativeUrlPipe } from '@app/shared/pipes/relative-url/relative-url.pip
 import { Router } from '@angular/router';
 import { Color } from '@components/block-overview-graph/sprite-types';
 import TxView from '@components/block-overview-graph/tx-view';
-import { FilterMode, GradientMode } from '@app/shared/filters.utils';
+import { FilterMode, GradientMode, TransactionFlags } from '@app/shared/filters.utils';
+import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
+import { ElectrsApiService } from '@app/services/electrs-api.service';
+import { OrdApiService } from '@app/services/ord-api.service';
+import { parseTaproot } from '@app/shared/transaction.utils';
 
 @Component({
   selector: 'app-mempool-block-overview',
@@ -41,11 +45,20 @@ export class MempoolBlockOverviewComponent implements OnInit, OnDestroy, OnChang
   blockSub: Subscription;
   firstLoad: boolean = true;
 
+  // txid -> blob URL of witness-decoded inscription content: unconfirmed txs
+  // are unknown to ord, so the projected block decodes envelopes client-side
+  ordContentUrls: { [txid: string]: string | SafeUrl } = {};
+  private ordChecked: Set<string> = new Set();
+  private ordBlobUrls: string[] = [];
+
   constructor(
     public stateService: StateService,
     private websocketService: WebsocketService,
     private router: Router,
     private cd: ChangeDetectorRef,
+    private sanitizer: DomSanitizer,
+    private electrsApiService: ElectrsApiService,
+    private ordApiService: OrdApiService,
   ) { }
 
   ngOnInit(): void {
@@ -125,6 +138,48 @@ export class MempoolBlockOverviewComponent implements OnInit, OnDestroy, OnChang
     this.blockSub.unsubscribe();
     this.timeLtrSubscription.unsubscribe();
     this.websocketService.stopTrackMempoolBlock();
+    this.ordBlobUrls.forEach((url) => URL.revokeObjectURL(url));
+  }
+
+  // fetch + decode the largest inscription-flagged txs in this projected
+  // block so their content shows inside the transaction squares
+  private refreshOrdContent(txs: TransactionStripped[], removed: string[] = []): void {
+    let changed = false;
+    for (const txid of removed) {
+      if (this.ordContentUrls[txid]) {
+        delete this.ordContentUrls[txid];
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.ordContentUrls = { ...this.ordContentUrls };
+      this.cd.markForCheck();
+    }
+    const candidates = (txs || [])
+      .filter((tx) => tx.flags && (BigInt(tx.flags) & TransactionFlags.inscription) && !this.ordChecked.has(tx.txid))
+      .sort((a, b) => b.vsize - a.vsize)
+      .slice(0, 24);
+    for (const tx of candidates) {
+      this.ordChecked.add(tx.txid);
+      this.electrsApiService.getTransaction$(tx.txid).subscribe((fullTx) => {
+        for (const vin of fullTx.vin || []) {
+          const script = vin.witness ? parseTaproot(vin.witness)?.scriptPath?.script : null;
+          if (!script || !script.includes('0063036f7264')) {
+            continue;
+          }
+          const inscriptions = this.ordApiService.decodeInscriptions(script) || [];
+          const insc = inscriptions.find((i) =>
+            (i.content_type_str || '').startsWith('image/') && i.body?.length && !i.is_cropped && !i.content_encoding_str);
+          if (insc) {
+            const blobUrl = URL.createObjectURL(new Blob([insc.body as BlobPart], { type: insc.content_type_str }));
+            this.ordBlobUrls.push(blobUrl);
+            this.ordContentUrls = { ...this.ordContentUrls, [tx.txid]: this.sanitizer.bypassSecurityTrustUrl(blobUrl) };
+            this.cd.markForCheck();
+            break;
+          }
+        }
+      });
+    }
   }
 
   replaceBlock(transactionsStripped: TransactionStripped[]): void {
@@ -139,6 +194,7 @@ export class MempoolBlockOverviewComponent implements OnInit, OnDestroy, OnChang
     this.lastBlockHeight = this.stateService.latestBlockHeight;
     this.blockIndex = this.index;
     this.isLoading$.next(false);
+    this.refreshOrdContent(transactionsStripped);
   }
 
   updateBlock(delta: MempoolBlockDelta): void {
@@ -157,6 +213,7 @@ export class MempoolBlockOverviewComponent implements OnInit, OnDestroy, OnChang
     this.lastBlockHeight = this.stateService.latestBlockHeight;
     this.blockIndex = this.index;
     this.isLoading$.next(false);
+    this.refreshOrdContent(delta.added as TransactionStripped[], delta.removed);
   }
 
   resumeBlock(transactionsStripped: TransactionStripped[]): void {
@@ -165,6 +222,7 @@ export class MempoolBlockOverviewComponent implements OnInit, OnDestroy, OnChang
       this.blockGraph.setup(transactionsStripped, true);
       this.blockIndex = this.index;
       this.isLoading$.next(false);
+      this.refreshOrdContent(transactionsStripped);
     } else {
       requestAnimationFrame(() => {
         this.resumeBlock(transactionsStripped);
