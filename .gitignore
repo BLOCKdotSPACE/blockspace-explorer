@@ -9,3 +9,9 @@ target
 docker/backend/start_ci.sh
 # local deployment secrets
 docker/.env
+
+# autodeploy build staging (tools/autodeploy.sh)
+frontend/dist-next/
+frontend/dist.prev/
+backend/dist-next/
+backend/dist.prev/
