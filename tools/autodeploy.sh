@@ -67,9 +67,15 @@ PY
 
   cd "$repo" || { log "no checkout at $repo"; return 1; }
   git fetch -q origin "$branch" || { log "fetch failed"; return 1; }
-  local old new
+  local old new deployed marker=.git/autodeploy-deployed
   old=$(git rev-parse HEAD); new=$(git rev-parse "origin/$branch")
-  [ "$old" = "$new" ] && [ -z "$force" ] && return 0
+  # The marker is the commit the units were last (re)built and restarted on;
+  # the deploy is the diff from it, so a commit made in this checkout and
+  # pushed (HEAD already equal to origin) still deploys (2026-10-07 lesson
+  # from blockspace-site).
+  deployed=$(cat "$marker" 2>/dev/null)
+  if [ -z "$deployed" ]; then echo "$old" > "$marker"; deployed=$old; fi
+  [ "$old" = "$new" ] && [ "$deployed" = "$old" ] && [ -z "$force" ] && return 0
 
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     log "REFUSING ${new:0:7}: the checkout has uncommitted edits; commit, stash or discard them"; return 1
@@ -80,9 +86,12 @@ PY
 
   local changed=""
   if [ "$old" != "$new" ]; then
-    changed=$(git diff --name-only "$old" "$new")
     git merge -q --ff-only "origin/$branch" || { log "fast-forward failed"; return 1; }
-    log "updated ${old:0:7} -> ${new:0:7} ($(echo "$changed" | wc -l) files): $(echo "$changed" | head -5 | tr '\n' ' ')"
+    log "updated ${old:0:7} -> ${new:0:7}"
+  fi
+  if [ "$deployed" != "$new" ]; then
+    changed=$(git diff --name-only "$deployed" "$new")
+    log "deploying ${deployed:0:7} -> ${new:0:7} ($(echo "$changed" | grep -c .) files): $(echo "$changed" | head -5 | tr '\n' ' ')"
   fi
 
   local do_be=0 do_fe=0 do_web=0
@@ -91,19 +100,20 @@ PY
   echo "$changed" | grep -qE '^frontend/serve-native\.js$'                            && do_web=1
   [ "$force" = --force-backend ]  && do_be=1
   [ "$force" = --force-frontend ] && do_fe=1
-  if [ $do_be = 0 ] && [ $do_fe = 0 ] && [ $do_web = 0 ]; then log "nothing served changed; no rebuild"; return 0; fi
+  if [ $do_be = 0 ] && [ $do_fe = 0 ] && [ $do_web = 0 ]; then log "nothing served changed; no rebuild"; echo "$new" > "$marker"; return 0; fi
 
   rollback() {   # $1 = which half to swap back (or "none")
     [ "$1" = backend ]  && { swap_back backend;  systemctl --user restart "$api_unit"; }
     [ "$1" = frontend ] && { swap_back frontend; systemctl --user restart "$web_unit"; }
-    if [ "$old" != "$new" ]; then
+    if [ "$deployed" != "$new" ]; then
       if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
         git stash push -q -m "autodeploy rollback $(date +%FT%T): local edits found while reverting ${new:0:7}" \
           && log "local edits found during rollback — saved as the newest 'git stash' entry, NOT discarded"
       fi
-      git reset -q --hard "$old"
+      git reset -q --hard "$deployed"
     fi
-    log "rolled back to ${old:0:7}"
+    echo "$deployed" > "$marker"
+    log "rolled back to ${deployed:0:7}"
   }
 
   if [ $do_be = 1 ]; then
@@ -141,6 +151,7 @@ PY
     systemctl --user restart "$web_unit"
     if settle web_ok 60; then log "serve-native restarted at ${new:0:7}"; else log "serve-native failed after restart"; rollback none; return 1; fi
   fi
+  echo "$new" > "$marker"
   return 0
 }
 
