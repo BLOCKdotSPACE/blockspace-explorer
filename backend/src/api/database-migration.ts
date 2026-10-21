@@ -7,7 +7,10 @@ import cpfpRepository from '../repositories/CpfpRepository';
 import { RowDataPacket } from 'mysql2';
 
 class DatabaseMigration {
-  private static currentVersion = 105;
+  // 107 (block.space, 2026-10-21): sub-1 sat/vB fee rates. The database had
+  // already recorded schema_version 106 with no matching migration in this
+  // tree (a newer upstream build once ran against it), so 106 is skipped.
+  private static currentVersion = 107;
   private queryTimeout = 3600_000;
   private statisticsAddedIndexed = false;
   private uniqueLogs: string[] = [];
@@ -1200,6 +1203,17 @@ class DatabaseMigration {
         await this.$executeQuery(`UPDATE state SET number = 929700 WHERE name = 'last_bitcoin_block_audit';`);
       }
       await this.updateToSchemaVersion(105);
+    }
+
+    // SUB-1 sat/vB FEE RATES (block.space, 2026-10-21). median_fee and
+    // avg_fee_rate were BIGINT UNSIGNED, so every median below 1 sat/vB —
+    // most full blocks since sub-1 relay — was stored as 0 and every other
+    // median lost its fraction. Widening to DOUBLE keeps every stored value
+    // exactly and stores new ones whole. Non-destructive: an older backend
+    // writes its integers into these columns without trouble.
+    if (databaseSchemaVersion < 107 && isBitcoin === true) {
+      await this.$executeQuery('ALTER TABLE `blocks` MODIFY `median_fee` DOUBLE UNSIGNED NOT NULL DEFAULT "0", MODIFY `avg_fee_rate` DOUBLE UNSIGNED NOT NULL DEFAULT "0"');
+      await this.updateToSchemaVersion(107);
     }
   }
 

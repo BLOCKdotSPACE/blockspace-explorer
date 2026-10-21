@@ -287,7 +287,10 @@ class Blocks {
       extras.feeRange = feeStats.feeRange;
       extras.totalFees = stats.totalfee;
       extras.avgFee = stats.avgfee;
-      extras.avgFeeRate = stats.avgfeerate;
+      // Core's getblockstats avgfeerate is a whole number of sat/vB (0 for
+      // every block below 1 sat/vB); total_weight excludes the coinbase, so
+      // this is the exact average Core rounds down (block.space, 2026-10-21)
+      extras.avgFeeRate = stats.total_weight ? stats.totalfee / (stats.total_weight / 4) : stats.avgfeerate;
       extras.utxoSetChange = stats.utxo_increase;
       extras.avgTxSize = Math.round(stats.total_size / stats.txs * 100) * 0.01;
       extras.totalInputs = stats.ins;
