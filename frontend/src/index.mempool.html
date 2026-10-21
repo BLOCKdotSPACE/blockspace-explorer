@@ -47,10 +47,17 @@
   <!-- END FAVICONS -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- block.space estate (revamp plan 0.4 R1/R5): the publisher, and this site, in the kit's shapes -->
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://blockspace.holdings/#org","name":"Blockspace Holdings","url":"https://blockspace.holdings/"},{"@type":"WebSite","@id":"https://explore.block.space/#website","url":"https://explore.block.space/","name":"explore.block.space","description":"The Bitcoin block and transaction explorer of block.space.","publisher":{"@id":"https://blockspace.holdings/#org"},"isPartOf":{"@id":"https://block.space/#website"},"inLanguage":"en"}]}</script>
 </head>
 
 <body>
   <app-root></app-root>
+  <!-- block.space estate (R1/R2): plain links, in the HTML as served, outside the app -->
+  <footer class="bs-estate" style="text-align:center;font-size:12px;padding:10px 0 16px;opacity:.8">
+    <a href="https://block.space/" style="color:inherit">block.space — The Bitcoin Blockspace Meter</a> ·
+    <a href="https://blockspace.holdings/" style="color:inherit">A Blockspace Holdings company</a>
+  </footer>
 </body>
 
 </html>
